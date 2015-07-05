@@ -5,7 +5,7 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 
 loop = asyncio.new_event_loop()
-event = "command"
+event = "my_event"
 params = ["func", "args"]
 
 dispatch = dispatch.Dispatch(loop)
@@ -20,17 +20,19 @@ def ncid():
 cid = ncid()
 
 
-@dispatch.on("command")
+def create_tasks():
+    n = 4
+    while n > 0:
+        dispatch.trigger(event, {"func": "f", "args": int(n)})
+        n -= 1
+
+
+@dispatch.on(event)
 async def coro_handle(func, args):
     id = next(cid)
     print(" "*id + "{}: coro sleeping {} sec".format(id, args))
     await asyncio.sleep(args, loop=loop)
     print(" "*id + "{}: coro complete".format(id))
-
-n = 4
-while n > 0:
-    dispatch.trigger("command", {"func": "f", "args": int(n)})
-    n -= 1
 
 
 async def stop_loop():
@@ -40,5 +42,14 @@ async def stop_loop():
     print("Stop successful")
 
 
-dispatch.start()
-loop.run_until_complete(stop_loop())
+async def single_dispatch_run():
+    create_tasks()
+    await dispatch.start()
+    await stop_loop()
+
+# Make sure we can restart
+print("\nFirst run")
+loop.run_until_complete(single_dispatch_run())
+print("\nSecond run")
+loop.run_until_complete(single_dispatch_run())
+print("Test complete")
