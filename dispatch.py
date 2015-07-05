@@ -7,25 +7,19 @@ def noop(*a, **kw):
     pass
 
 
-async def anoop(*a, **kw):
-    pass
-
-
 class RestartableTask():
     def __init__(self, loop):
         '''
-        task        - a coroutine which takes a single argument, an event which
-                      should be set when the main task is ready to be shut down
-        on_shutdown - a coroutine which takes a single argument, an event which
-                      should be set when the main task is ready to be shut down
+        Abstract task that ensures a previous run's shutdown logic has
+        completed before the next start call is allowed to continue.
 
-        The shutdown_complete event MUST be set by either the task coro or
-        the on_shutdown coro to finish shutting down.
+        `_task` OR `_on_shutdown` MUST set self._shutdown_complete when they
+        have finished cleaning up.
         '''
-        self._loop = loop
+        self.loop = loop
         self.running = False
-        self._start_shutdown = asyncio.Event(loop=self._loop)
-        self._shutdown_complete = asyncio.Event(loop=self._loop)
+        self._start_shutdown = asyncio.Event(loop=self.loop)
+        self._shutdown_complete = asyncio.Event(loop=self.loop)
 
     async def start(self):
         if self.running:
@@ -38,7 +32,7 @@ class RestartableTask():
             self._shutdown_complete.clear()
 
         self.running = True
-        self._loop.create_task(self._task())
+        self.loop.create_task(self._task())
 
     async def stop(self):
         if not self.running:
@@ -61,8 +55,8 @@ class Dispatch(RestartableTask):
     def __init__(self, loop):
         super().__init__(loop=loop)
         self._handlers = {}
-        self._queue = asyncio.Queue(loop=self._loop)
-        self._resume_processing = asyncio.Event(loop=self._loop)
+        self._queue = asyncio.Queue(loop=self.loop)
+        self._resume_processing = asyncio.Event(loop=self.loop)
 
     def on(self, event):
         '''
@@ -93,7 +87,7 @@ class Dispatch(RestartableTask):
         handler = self._handlers.get(event, missing)
         if handler is not missing:
             raise ValueError("Event {} already registered".format(event))
-        self._handlers[event] = EventHandler(event, params, self._loop)
+        self._handlers[event] = EventHandler(event, params, self.loop)
 
     def unregister(self, event):
         '''
@@ -155,7 +149,7 @@ class Dispatch(RestartableTask):
         # Give all the handlers a chance to complete their pending tasks
         tasks = [handler.stop() for handler in self._handlers.values()]
         if tasks:
-            await asyncio.wait(tasks, loop=self._loop)
+            await asyncio.wait(tasks, loop=self.loop)
 
 
 class EventHandler(RestartableTask):
@@ -173,7 +167,7 @@ class EventHandler(RestartableTask):
                 "EventHandler must be running to delegate events")
 
         for callback in self._callbacks:
-            task = self._loop.create_task(callback(params))
+            task = self.loop.create_task(callback(params))
             self._tasks[id(task)] = task
             task.add_done_callback(self._delegate_done)
 
@@ -195,7 +189,7 @@ class EventHandler(RestartableTask):
         # Give all active tasks a chance to complete
         active_tasks = list(self._tasks.values())
         if active_tasks:
-            await asyncio.wait(active_tasks, loop=self._loop)
+            await asyncio.wait(active_tasks, loop=self.loop)
 
         self._shutdown_complete.set()
 
