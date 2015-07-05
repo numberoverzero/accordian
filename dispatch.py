@@ -67,38 +67,45 @@ class Dispatch(object):
         self._handlers.pop(event, None)
 
     def start(self):
+        ''' Non-blocking call to begin processing events '''
         self._loop.create_task(self._run())  # New in 3.4.2
         # https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.BaseEventLoop.create_task
 
+    @property
+    def running(self):
+        ''' True if the shutdown process hasn't started '''
+        return not (self._start_shutdown.done() or
+                    self._shutdown_complete.done())
+
+    @property
+    def events(self):
+        ''' Number of events currently enqueued '''
+        return self._queue.qsize()
+
     async def stop(self):
+        '''
+        Stop processing events.
+
+        Yields when all ongoing events have finished.
+        '''
         # Signal that the queue should no longer be processed
         self._start_shutdown.set_result(True)
+
+        # If the processor is waiting, resume so we can shutdown.
+        self._resume_processing.set()
 
         # Give all the handlers a chance to complete their pending tasks
         tasks = [handler.stop() for handler in self._handlers.values()]
         if tasks:
             await asyncio.wait(tasks, loop=self._loop)
 
-        # If the processing has hung, resume so we can shutdown.
-        self._resume_processing.set()
-
         # Wait until the queue processor signals back that it's shut down
         await self._shutdown_complete
 
     async def _run(self):
 
-        def running():
-            '''
-            Stop when shutdown is first triggered.
-            We don't want to process any events that come in afterwards.
-            '''
-            return not self._start_shutdown.done()
-
-        def has_events():
-            return not self._queue.empty()
-
-        while running():
-            if has_events():
+        while self.running:
+            if self.events:
                 event, params = await self._queue.get()
                 handler = self._handlers.get(event, noop)
                 handler(params)
