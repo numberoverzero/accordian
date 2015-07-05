@@ -1,5 +1,8 @@
 import asyncio
 import dispatch
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 loop = asyncio.new_event_loop()
 event = "command"

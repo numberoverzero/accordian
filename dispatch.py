@@ -15,6 +15,7 @@ class Dispatch(object):
         self._queue = asyncio.Queue(loop=self._loop)
         self._start_shutdown = asyncio.Future(loop=self._loop)
         self._shutdown_complete = asyncio.Future(loop=self._loop)
+        self._resume_processing = asyncio.Event(loop=self._loop)
 
     def on(self, event):
         '''
@@ -35,6 +36,7 @@ class Dispatch(object):
     def trigger(self, event, params):
         ''' Non-blocking enqueue of an event '''
         self._queue.put_nowait((event, params))
+        self._resume_processing.set()
 
     def register(self, event, params):
         '''
@@ -77,28 +79,33 @@ class Dispatch(object):
         if tasks:
             await asyncio.wait(tasks, loop=self._loop)
 
+        # If the processing has hung, resume so we can shutdown.
+        self._resume_processing.set()
+
         # Wait until the queue processor signals back that it's shut down
         await self._shutdown_complete
 
     async def _run(self):
+
         def running():
+            '''
+            Stop when shutdown is first triggered.
+            We don't want to process any events that come in afterwards.
+            '''
             return not self._start_shutdown.done()
 
         def has_events():
             return not self._queue.empty()
 
-        while running() or has_events():
-            try:
-                # queue.get() will hang until it gets a result.
-                # If we're trying to shut down the loop and the queue is empty,
-                # we don't want to hang forever here.  At worst, we should wait
-                # 0.5 sec (+/- loop timer granularity)
-                event, params = await asyncio.wait_for(
-                    self._queue.get(), timeout=0.5, loop=self._loop)
+        while running():
+            if has_events():
+                event, params = await self._queue.get()
                 handler = self._handlers.get(event, noop)
                 handler(params)
-            except asyncio.TimeoutError:
-                continue
+            else:
+                # Resume on either the next `trigger` call or a `stop`
+                await self._resume_processing.wait()
+                self._resume_processing.clear()
 
         # Don't double set - causes asyncio.futures.InvalidStateError
         if not self._shutdown_complete.done():
@@ -166,10 +173,10 @@ def validate_func(event, callback, params):
         if kind == inspect.Parameter.VAR_POSITIONAL:
             raise ValueError(
                 ("function '{}' expects parameter {} to be VAR_POSITIONAL, "
-                 + "when it will always be a single value.  This parameter "
-                 + "must be either POSITIONAL_ONLY, POSITIONAL_OR_KEYWORD, or "
-                 + "KEYWORD_ONLY (or omitted)").format(callback.__name__,
-                                                       param.name))
+                 "when it will always be a single value.  This parameter "
+                 "must be either POSITIONAL_ONLY, POSITIONAL_OR_KEYWORD, or "
+                 "KEYWORD_ONLY (or omitted)").format(callback.__name__,
+                                                     param.name))
         if kind == inspect.Parameter.VAR_KEYWORD:
             # **kwargs are ok, as long as the **name doesn't
             # mask an actual param that the event emits.
@@ -177,7 +184,7 @@ def validate_func(event, callback, params):
                 # masking :(
                 raise ValueError(
                     ("function '{}' expects parameter {} to be VAR_KEYWORD, "
-                     + "which masks an actual parameter for event {}.  This "
+                     "which masks an actual parameter for event {}.  This "
                      "event has the following parameters, which must not be "
                      "used as the **VAR_KEYWORD argument.  They may be "
                      "omitted").format(
@@ -191,9 +198,9 @@ def validate_func(event, callback, params):
     if unavailable:
         raise ValueError(
             ("function '{}' expects the following parameters for event {} "
-             + "that are not available: {}.  Available parameters for this "
-             + "event are: {}").format(callback.__name__, event,
-                                       unavailable, available))
+             "that are not available: {}.  Available parameters for this "
+             "event are: {}").format(callback.__name__, event,
+                                     unavailable, available))
 
 
 def partial_bind(callback):
