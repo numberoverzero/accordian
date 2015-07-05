@@ -7,16 +7,60 @@ def noop(*a, **kw):
     pass
 
 
+async def anoop(*a, **kw):
+    pass
+
+
+class RestartableTask():
+    def __init__(self, loop, task=anoop, on_shutdown=anoop):
+        '''
+        task        - a coroutine which takes a single argument, an event which
+                      should be set when the main task is ready to be shut down
+        on_shutdown - a coroutine which takes a single argument, an event which
+                      should be set when the main task is ready to be shut down
+
+        The shutdown_complete event MUST be set by either the task coro or
+        the on_shutdown coro to finish shutting down.
+        '''
+        self.loop = loop
+        self.task = task
+        self.on_shutdown = on_shutdown
+
+        self.running = False
+        self.start_shutdown = asyncio.Event(loop=self.loop)
+        self.shutdown_complete = asyncio.Event(loop=self.loop)
+
+    async def start(self):
+        if self.running:
+            return
+
+        if self.start_shutdown.is_set():
+            if not self.shutdown_complete.is_set():
+                await self.shutdown_complete.wait()
+            self.start_shutdown.clear()
+            self.shutdown_complete.clear()
+
+        self.running = True
+        self.loop.create_task(self.task(self.shutdown_complete))
+
+    async def stop(self):
+        if not self.running:
+            return
+        self.running = False
+
+        self.start_shutdown.set()
+        await self.on_shutdown(self.shutdown_complete)
+        await self.shutdown_complete.wait()
+
+
 class Dispatch(object):
     ''' Dispatch unpacked **kwargs to callbacks when events occur '''
     def __init__(self, loop):
         self._handlers = {}
         self._loop = loop
         self._queue = asyncio.Queue(loop=self._loop)
-        self.running = False
-        self._start_shutdown = asyncio.Event(loop=self._loop)
-        self._shutdown_complete = asyncio.Event(loop=self._loop)
         self._resume_processing = asyncio.Event(loop=self._loop)
+        self._task = RestartableTask(self._loop, self._run, self._on_shutdown)
 
     def on(self, event):
         '''
@@ -33,11 +77,6 @@ class Dispatch(object):
         if not handler:
             raise ValueError("Unknown event '{}'".format(event))
         return handler.register
-
-    def trigger(self, event, params):
-        ''' Non-blocking enqueue of an event '''
-        self._queue.put_nowait((event, params))
-        self._resume_processing.set()
 
     def register(self, event, params):
         '''
@@ -67,28 +106,15 @@ class Dispatch(object):
         '''
         self._handlers.pop(event, None)
 
-    async def start(self):
-        '''
-        Begin processing events.
+    def trigger(self, event, params):
+        ''' Non-blocking enqueue of an event '''
+        self._queue.put_nowait((event, params))
+        self._resume_processing.set()
 
-        If currently shutting down, waits until shutdown completes to start.
-        '''
-        # no-op if already running
-        if self.running:
-            return
-
-        # Start during/after shutdown
-        if self._start_shutdown.is_set():
-            if not self._shutdown_complete.is_set():
-                await self._shutdown_complete.wait()
-            self._start_shutdown.clear()
-            self._shutdown_complete.clear()
-            self._resume_processing.clear()
-
-        self.running = True
-        for handler in self._handlers.values():
-            await handler.start()
-        self._loop.create_task(self._run())
+    @property
+    def events(self):
+        ''' Number of events currently enqueued '''
+        return self._queue.qsize()
 
     def clear(self):
         '''
@@ -102,9 +128,16 @@ class Dispatch(object):
             self._queue.get_nowait()
 
     @property
-    def events(self):
-        ''' Number of events currently enqueued '''
-        return self._queue.qsize()
+    def running(self):
+        return self._task.running
+
+    async def start(self):
+        '''
+        Begin processing events.
+
+        If currently shutting down, waits until shutdown completes to start.
+        '''
+        await self._task.start()
 
     async def stop(self):
         '''
@@ -112,28 +145,14 @@ class Dispatch(object):
 
         Yields when all ongoing events have finished.
         '''
-        # Bail early if we're not running
-        if not self.running:
-            return
+        await self._task.stop()
 
-        self.running = False
-
-        # Signal that the queue should no longer be processed
-        self._start_shutdown.set()
-
-        # If the processor is waiting, resume so it can exit cleanly
-        self._resume_processing.set()
-
-        # Give all the handlers a chance to complete their pending tasks
-        tasks = [handler.stop() for handler in self._handlers.values()]
-        if tasks:
-            await asyncio.wait(tasks, loop=self._loop)
-
-        # Wait until the queue processor signals back that it's shut down
-        await self._shutdown_complete.wait()
-
-    async def _run(self):
+    async def _run(self, shutdown_complete):
         ''' Main queue processor '''
+
+        for handler in self._handlers.values():
+            await handler.start()
+
         while self.running:
             if self.events:
                 event, params = await self._queue.get()
@@ -145,7 +164,16 @@ class Dispatch(object):
                 self._resume_processing.clear()
 
         # Let the shutdown process continue
-        self._shutdown_complete.set()
+        shutdown_complete.set()
+
+    async def _on_shutdown(self, shutdown_complete):
+        # If the processor is waiting, resume so it can exit cleanly
+        self._resume_processing.set()
+
+        # Give all the handlers a chance to complete their pending tasks
+        tasks = [handler.stop() for handler in self._handlers.values()]
+        if tasks:
+            await asyncio.wait(tasks, loop=self._loop)
 
 
 class EventHandler(object):
@@ -154,9 +182,7 @@ class EventHandler(object):
         self._params = params
         self._callbacks = []
         self._loop = loop
-        self.running = False
-        self._start_shutdown = asyncio.Event(loop=self._loop)
-        self._shutdown_complete = asyncio.Event(loop=self._loop)
+        self._task = RestartableTask(self._loop, on_shutdown=self._on_shutdown)
         self._tasks = {}
 
     def __call__(self, params):
@@ -168,15 +194,15 @@ class EventHandler(object):
         for callback in self._callbacks:
             task = self._loop.create_task(callback(params))
             self._tasks[id(task)] = task
-            task.add_done_callback(self._task_done_callback)
+            task.add_done_callback(self._delegate_done)
 
-    def _task_done_callback(self, fut):
+    def _delegate_done(self, task):
         '''
         When a callback is complete, remove it from the active task set.
 
         Don't throw if the task has already been removed
         '''
-        self._tasks.pop(id(fut), None)
+        self._tasks.pop(id(task), None)
 
     def register(self, callback):
         self._validate(callback)
@@ -184,43 +210,29 @@ class EventHandler(object):
         self._callbacks.append(wrapped)
         return callback
 
+    @property
+    def running(self):
+        return self._task.running
+
     async def start(self):
         '''
         Begin processing events.
 
         If currently shutting down, waits until shutdown completes to start.
         '''
-        # no-op if already running
-        if self.running:
-            return
-
-        # Start during/after shutdown
-        if self._start_shutdown.is_set():
-            if not self._shutdown_complete.is_set():
-                await self._shutdown_complete.wait()
-            self._start_shutdown.clear()
-            self._shutdown_complete.clear()
-
-        self.running = True
+        await self._task.start()
 
     async def stop(self):
         ''' Give incomplete tasks a chance to clean up. '''
-        # Don't clean up if stop has already been called - processed tasks
-        # are already being cleaned up.
-        if not self.running:
-            return
+        await self._task.stop()
 
-        self.running = False
-
-        # Signal that events should no longer be processed
-        self._start_shutdown.set()
-
+    async def _on_shutdown(self, shutdown_complete):
         # Give all active tasks a chance to complete
         active_tasks = list(self._tasks.values())
         if active_tasks:
             await asyncio.wait(active_tasks, loop=self._loop)
 
-        self._shutdown_complete.set()
+        shutdown_complete.set()
 
     def _wrap(self, callback):
         return partial_bind(callback)
