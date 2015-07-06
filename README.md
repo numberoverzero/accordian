@@ -1,4 +1,4 @@
-# accordian 0.2.0
+# accordian 0.2.1
 
 [![Build Status]
 (https://travis-ci.org/numberoverzero/accordian.svg?branch=master)]
