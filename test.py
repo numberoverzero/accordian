@@ -55,27 +55,3 @@ loop.run_until_complete(single_dispatch_run())
 print("\nSecond run")
 loop.run_until_complete(single_dispatch_run())
 print("Test complete")
-
-print("\nTest async_util.Value")
-signal = dispatch.Value(loop=loop, value=False)
-
-
-async def iterate_values(values, fut):
-    for value in values:
-        signal.value = value
-        print("Set signal to {}".format(value))
-        await asyncio.sleep(0.5, loop=loop)
-    fut.set_result(True)
-
-
-async def print_when(value):
-    print("Waiting for signal to reach {}".format(value))
-    await signal.wait_for(value)
-    print("Signal reached desired value {}".format(value))
-
-complete = asyncio.Future(loop=loop)
-loop.create_task(print_when("foo"))
-loop.create_task(print_when(3))
-loop.create_task(iterate_values([1, 2, 3, "foo", 4], complete))
-loop.run_until_complete(complete)
-print("Test complete")
