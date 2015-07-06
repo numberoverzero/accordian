@@ -1,5 +1,5 @@
 language: python
-python: 3.5
+python: nightly
 env:
   - TOXENV=py35
 install: pip install tox coveralls
