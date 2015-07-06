@@ -1,5 +1,5 @@
 import asyncio
-import dispatch
+import accord
 import logging
 
 logging.basicConfig(level=logging.DEBUG)
@@ -8,8 +8,8 @@ loop = asyncio.new_event_loop()
 event = "my_event"
 params = ["func", "args"]
 
-dispatcher = dispatch.Dispatch(loop)
-dispatcher.register(event, params)
+dispatch = accord.Dispatch(loop)
+dispatch.register(event, params)
 
 
 def ncid():
@@ -23,11 +23,11 @@ cid = ncid()
 def create_tasks():
     n = 2.0
     while n > 0:
-        dispatcher.trigger(event, {"func": "f", "args": n})
+        dispatch.trigger(event, {"func": "f", "args": n})
         n -= 0.5
 
 
-@dispatcher.on(event)
+@dispatch.on(event)
 async def coro_handle(func, args):
     id = next(cid)
     space = int(2*id)
@@ -39,13 +39,13 @@ async def coro_handle(func, args):
 async def stop_loop():
     await asyncio.sleep(0.6, loop=loop)
     print("Try to stop")
-    await dispatcher.stop()
+    await dispatch.stop()
     print("Stop successful")
 
 
 async def single_dispatch_run():
     create_tasks()
-    await dispatcher.start()
+    await dispatch.start()
     await stop_loop()
 
 print("\nTest dispatch.Dispatch")

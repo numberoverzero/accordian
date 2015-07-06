@@ -2,13 +2,14 @@ from setuptools import setup, find_packages
 
 
 setup(
-    name='dispatch',
+    name='accord',
     version='0.2.0',
     description='Event dispatch in Python 3.5 using asyncio',
     long_description=open('README.md').read(),
     author='Joe Cross',
     author_email='joe.mcross@gmail.com',
-    url='http://github.com/numberoverzero/dispatch/',
+    url='http://github.com/numberoverzero/accord/',
+    py_modules=['accord'],
     packages=find_packages(exclude=('tests', 'examples')),
     install_requires=[],
     license='MIT',

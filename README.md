@@ -1,35 +1,35 @@
-# Dispatch 0.2.0
+# accord 0.2.0
 
 [![Build Status]
-(https://travis-ci.org/numberoverzero/dispatch.svg?branch=master)]
-(https://travis-ci.org/numberoverzero/dispatch)[![Coverage Status]
-(https://coveralls.io/repos/numberoverzero/dispatch/badge.png?branch=master)]
-(https://coveralls.io/r/numberoverzero/dispatch?branch=master)
+(https://travis-ci.org/numberoverzero/accord.svg?branch=master)]
+(https://travis-ci.org/numberoverzero/accord)[![Coverage Status]
+(https://coveralls.io/repos/numberoverzero/accord/badge.png?branch=master)]
+(https://coveralls.io/r/numberoverzero/accord?branch=master)
 
-Downloads https://pypi.python.org/pypi/dispatch
+Downloads https://pypi.python.org/pypi/accord
 
-Source https://github.com/numberoverzero/dispatch
+Source https://github.com/numberoverzero/accord
 
 Event dispatch in Python 3.5 using asyncio
 
 # Installation
 
-`pip install dispatch`
+`pip install accord`
 
 # Getting Started
 
 ```python
 import asyncio
-import dispatch
+import accord
 import random
 
 loop = asyncio.new_event_loop()
-dispatcher = dispatch.Dispatch(loop=loop)
 
-dispatcher.register("my_event", ["id", "value"])
+dispatch = accord.Dispatch(loop=loop)
+dispatch.register("my_event", ["id", "value"])
 
 
-@dispatcher.on("my_event")
+@dispatch.on("my_event")
 async def handle(id, value):
     sleep = 5.0 * random.random()
     print("Handling `my_event(id={})` in {} seconds.".format(id, sleep))
@@ -41,11 +41,11 @@ ids = range(4)
 values = [random.random() for _ in ids]
 for id, value in zip(ids, values):
     params = {"id": id, "value": value}
-    dispatcher.trigger("my_event", params)
+    dispatch.trigger("my_event", params)
 
-loop.create_task(dispatcher.start())
+loop.create_task(dispatch.start())
 loop.run_until_complete(asyncio.sleep(0.01, loop=loop))
-loop.run_until_complete(dispatcher.stop())
+loop.run_until_complete(dispatch.stop())
 
 ```
 
@@ -53,12 +53,12 @@ loop.run_until_complete(dispatcher.stop())
 Contributions welcome!  Please make sure `tox` passes (including flake8) before submitting a PR.
 
 ### Development
-dispatch uses `tox`, `pytest` and `flake8`.  To get everything set up:
+accord uses `tox`, `pytest` and `flake8`.  To get everything set up:
 
 ```
 # RECOMMENDED: create a virtualenv with:
-#     mkvirtualenv dispatch
-git clone https://github.com/numberoverzero/dispatch.git
+#     mkvirtualenv accord
+git clone https://github.com/numberoverzero/accord.git
 pip install tox
 tox
 ```
