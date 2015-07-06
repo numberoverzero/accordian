@@ -1,5 +1,5 @@
 import asyncio
-import accord
+import accordian
 import logging
 
 logging.basicConfig(level=logging.DEBUG)
@@ -8,7 +8,7 @@ loop = asyncio.new_event_loop()
 event = "my_event"
 params = ["func", "args"]
 
-dispatch = accord.Dispatch(loop)
+dispatch = accordian.Dispatch(loop)
 dispatch.register(event, params)
 
 

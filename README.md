@@ -1,31 +1,31 @@
-# accord 0.2.0
+# accordian 0.2.0
 
 [![Build Status]
-(https://travis-ci.org/numberoverzero/accord.svg?branch=master)]
-(https://travis-ci.org/numberoverzero/accord)[![Coverage Status]
-(https://coveralls.io/repos/numberoverzero/accord/badge.png?branch=master)]
-(https://coveralls.io/r/numberoverzero/accord?branch=master)
+(https://travis-ci.org/numberoverzero/accordian.svg?branch=master)]
+(https://travis-ci.org/numberoverzero/accordian)[![Coverage Status]
+(https://coveralls.io/repos/numberoverzero/accordian/badge.png?branch=master)]
+(https://coveralls.io/r/numberoverzero/accordian?branch=master)
 
-Downloads https://pypi.python.org/pypi/accord
+Downloads https://pypi.python.org/pypi/accordian
 
-Source https://github.com/numberoverzero/accord
+Source https://github.com/numberoverzero/accordian
 
 Event dispatch in Python 3.5 using asyncio
 
 # Installation
 
-`pip install accord`
+`pip install accordian`
 
 # Getting Started
 
 ```python
 import asyncio
-import accord
+import accordian
 import random
 
 loop = asyncio.new_event_loop()
 
-dispatch = accord.Dispatch(loop=loop)
+dispatch = accordian.Dispatch(loop=loop)
 dispatch.register("my_event", ["id", "value"])
 
 
@@ -53,12 +53,12 @@ loop.run_until_complete(dispatch.stop())
 Contributions welcome!  Please make sure `tox` passes (including flake8) before submitting a PR.
 
 ### Development
-accord uses `tox`, `pytest` and `flake8`.  To get everything set up:
+accordian uses `tox`, `pytest` and `flake8`.  To get everything set up:
 
 ```
 # RECOMMENDED: create a virtualenv with:
-#     mkvirtualenv accord
-git clone https://github.com/numberoverzero/accord.git
+#     mkvirtualenv accordian
+git clone https://github.com/numberoverzero/accordian.git
 pip install tox
 tox
 ```
