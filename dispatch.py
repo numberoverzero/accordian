@@ -1,35 +1,33 @@
 import asyncio
 import inspect
-missing = object()
+
+__all__ = ["Value", "RestartableTask", "Dispatch", "EventHandler"]
 
 
-def noop(*a, **kw):
-    pass
-
-
-class RestartableTask():
+class RestartableTask:
     def __init__(self, loop):
         '''
         Abstract task that ensures a previous run's shutdown logic has
         completed before the next start call is allowed to continue.
 
-        `_task` OR `_on_shutdown` MUST set self._shutdown_complete when they
-        have finished cleaning up.
+        subclass implementations of `_task` and `_on_shutdown` MUST call
+        `await super()._task()` and `await super()._on_shutdown()` respectively
+        when they are ready to shut down.  The task will not shut down
+        until then.
         '''
         self.loop = loop
         self.running = False
-        self._start_shutdown = asyncio.Event(loop=self.loop)
-        self._shutdown_complete = asyncio.Event(loop=self.loop)
+        self.__start_shutdown = asyncio.Event(loop=self.loop)
+        self.__shutdown_complete = Value(loop=self.loop, value=0, expected=2)
 
     async def start(self):
         if self.running:
             return
 
-        if self._start_shutdown.is_set():
-            if not self._shutdown_complete.is_set():
-                await self._shutdown_complete.wait()
-            self._start_shutdown.clear()
-            self._shutdown_complete.clear()
+        if self.__start_shutdown.is_set():
+            await self.__shutdown_complete.wait()
+            self.__start_shutdown.clear()
+            self.__shutdown_complete.value = 0
 
         self.running = True
         self.loop.create_task(self._task())
@@ -39,22 +37,22 @@ class RestartableTask():
             return
         self.running = False
 
-        self._start_shutdown.set()
+        self.__start_shutdown.set()
         await self._on_shutdown()
-        await self._shutdown_complete.wait()
+        await self.__shutdown_complete.wait()
 
     async def _task(self):
-        pass
+        self.__shutdown_complete.value += 1
 
     async def _on_shutdown(self):
-        pass
+        self.__shutdown_complete.value += 1
 
 
 class Dispatch(RestartableTask):
     ''' Dispatch unpacked **kwargs to callbacks when events occur '''
     def __init__(self, loop):
         super().__init__(loop=loop)
-        self._handlers = {}
+        self._handlers = FuncDict()
         self._queue = asyncio.Queue(loop=self.loop)
         self._resume_processing = asyncio.Event(loop=self.loop)
 
@@ -69,7 +67,7 @@ class Dispatch(RestartableTask):
                 ...
 
         '''
-        handler = self._handlers.get(event, None)
+        handler = self._handlers[event]
         if not handler:
             raise ValueError("Unknown event '{}'".format(event))
         return handler.register
@@ -84,7 +82,7 @@ class Dispatch(RestartableTask):
             dispatch.register("my_event", ["foo", "bar", "baz"])
 
         '''
-        handler = self._handlers.get(event, missing)
+        handler = self._handlers[event]
         if handler is not missing:
             raise ValueError("Event {} already registered".format(event))
         self._handlers[event] = EventHandler(event, params, self.loop)
@@ -100,7 +98,7 @@ class Dispatch(RestartableTask):
             dispatch.unregister("my_event")  # no-op
 
         '''
-        self._handlers.pop(event, None)
+        self._handlers.pop[event]
 
     def trigger(self, event, params):
         ''' Non-blocking enqueue of an event '''
@@ -116,7 +114,7 @@ class Dispatch(RestartableTask):
         '''
         Clear any enqueued events.
 
-        Throws a RuntimeException if called while the Dispatcher is running
+        Raises a RuntimeException if called while the Dispatcher is running
         '''
         if self.running:
             raise RuntimeError("Can't clear the queue while running")
@@ -132,15 +130,14 @@ class Dispatch(RestartableTask):
         while self.running:
             if self.events:
                 event, params = await self._queue.get()
-                handler = self._handlers.get(event, noop)
+                handler = self._handlers[event]
                 handler(params)
             else:
                 # Resume on either the next `trigger` call or a `stop`
                 await self._resume_processing.wait()
                 self._resume_processing.clear()
-
         # Let the shutdown process continue
-        self._shutdown_complete.set()
+        await super()._task()
 
     async def _on_shutdown(self):
         # If the processor is waiting, resume so it can exit cleanly
@@ -150,6 +147,7 @@ class Dispatch(RestartableTask):
         tasks = [handler.stop() for handler in self._handlers.values()]
         if tasks:
             await asyncio.wait(tasks, loop=self.loop)
+        await super()._on_shutdown()
 
 
 class EventHandler(RestartableTask):
@@ -175,7 +173,7 @@ class EventHandler(RestartableTask):
         '''
         When a callback is complete, remove it from the active task set.
 
-        Don't throw if the task has already been removed
+        Don't raise if the task has already been removed
         '''
         self._tasks.pop(id(task), None)
 
@@ -190,8 +188,7 @@ class EventHandler(RestartableTask):
         active_tasks = list(self._tasks.values())
         if active_tasks:
             await asyncio.wait(active_tasks, loop=self.loop)
-
-        self._shutdown_complete.set()
+        await super()._on_shutdown()
 
     def _wrap(self, callback):
         return partial_bind(callback)
@@ -266,3 +263,100 @@ def partial_bind(callback):
         return await callback(*bound.args, **bound.kwargs)
 
     return wrapper
+
+
+def missing(*a, **kw):
+    ''' A no-op handler when one is not present '''
+    pass
+
+
+class FuncDict(dict):
+    '''
+    Returns `missing` when the key is missing.
+    Does not persist the value for the missing key.
+    '''
+    def __missing__(self, key):
+        return missing
+
+
+class Value:
+    '''
+    Simple class that enables `await value.wait_for(foo)` to wait until the
+    variable is set to the expected value, without blocking the event loop.
+
+    Loosely modeled after asyncio.Event and asyncio.condition
+
+    Usage:
+        import asyncio
+        loop = asyncio.new_event_loop()
+        signal = Value(loop=loop, value=False)
+
+
+        async def iterate_values(values, fut):
+            for value in values:
+                signal.value = value
+                print("Set signal to {}".format(value))
+                await asyncio.sleep(1, loop=loop)
+            fut.set_result(True)
+
+
+        async def print_when(value):
+            await signal.wait_for(value)
+            print("Signal reached desired value {}".format(value))
+
+        complete = asyncio.Future(loop=loop)
+        loop.create_task(print_when("foo"))
+        loop.create_task(print_when(3))
+        loop.create_task(iterate_values([1, 2, 3, "foo", 4], complete))
+        loop.run_until_complete(complete)
+
+    '''
+    def __init__(self, loop, value=None, expected=missing):
+        self.loop = loop
+        self.watchers = set()
+        self._value = value
+        self._expected = expected
+
+    @property
+    def value(self):
+        return self._value
+
+    @value.setter
+    def value(self, v):
+        self._value = v
+        # FOrce all `wait_for` to re-check the value
+        for watcher in self.watchers:
+            watcher.set()
+
+    async def wait_for(self, value):
+        '''
+        Yields when the Value is set to the given value.
+
+        Doesn't block the event loop with a busy `while` loop.
+        '''
+        # Don't wait if we're already at the expected value
+        if value == self.value:
+            return
+
+        watcher = asyncio.Event(loop=self.loop)
+        self.watchers.add(watcher)
+
+        # We'll only re-check the condition when the value changes,
+        # yielding back to the poller when it's not equal.
+        while self.value != value:
+            await watcher.wait()
+            watcher.clear()
+
+        # Clean up the watcher now that we've reached the expected value
+        self.watchers.remove(watcher)
+
+    async def wait(self):
+        '''
+        Waits until the Value is set to the given `expected` value.
+
+        Raises if `expected` was not set.
+        '''
+        if self._expected is missing:
+            raise RuntimeError(
+                "Must define `expected` when intializing the Value")
+        await self.wait_for(self._expected)
