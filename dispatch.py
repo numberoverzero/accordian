@@ -1,6 +1,6 @@
 import asyncio
 import inspect
-
+missing = object()
 __all__ = ["RestartableTask", "Dispatch", "EventHandler"]
 
 
@@ -55,7 +55,7 @@ class Dispatch(RestartableTask):
     ''' Dispatch unpacked **kwargs to callbacks when events occur '''
     def __init__(self, loop):
         super().__init__(loop=loop)
-        self._handlers = FuncDict()
+        self._handlers = {}
         self._queue = asyncio.Queue(loop=self.loop)
         self._resume_processing = asyncio.Event(loop=self.loop)
 
@@ -70,7 +70,7 @@ class Dispatch(RestartableTask):
                 ...
 
         '''
-        handler = self._handlers[event]
+        handler = self._handlers.get(event, None)
         if not handler:
             raise ValueError("Unknown event '{}'".format(event))
         return handler.register
@@ -85,8 +85,8 @@ class Dispatch(RestartableTask):
             dispatch.register("my_event", ["foo", "bar", "baz"])
 
         '''
-        handler = self._handlers[event]
-        if handler is not missing:
+        handler = self._handlers.get(event, None)
+        if handler is not None:
             raise ValueError("Event {} already registered".format(event))
         self._handlers[event] = EventHandler(event, params, self.loop)
 
@@ -101,7 +101,7 @@ class Dispatch(RestartableTask):
             dispatch.unregister("my_event")  # no-op
 
         '''
-        self._handlers.pop[event]
+        self._handlers.pop(event, None)
 
     def trigger(self, event, params):
         ''' Non-blocking enqueue of an event '''
@@ -133,8 +133,9 @@ class Dispatch(RestartableTask):
         while self.running:
             if self.events:
                 event, params = await self._queue.get()
-                handler = self._handlers[event]
-                handler(params)
+                handler = self._handlers.get(event, None)
+                if handler:
+                    handler(params)
             else:
                 # Resume on either the next `trigger` call or a `stop`
                 await self._resume_processing.wait()
@@ -200,9 +201,6 @@ class EventHandler(RestartableTask):
     def _validate(self, callback):
         validate_func(self._event, callback, self._params)
 
-    def __repr__(self):
-        return "EventHandler({})".format(self._event)
-
 
 def validate_func(event, callback, params):
     sig = inspect.signature(callback)
@@ -267,17 +265,3 @@ def partial_bind(callback):
         return await callback(*bound.args, **bound.kwargs)
 
     return wrapper
-
-
-def missing(*a, **kw):
-    ''' A no-op handler when one is not present '''
-    pass
-
-
-class FuncDict(dict):
-    '''
-    Returns `missing` when the key is missing.
-    Does not persist the value for the missing key.
-    '''
-    def __missing__(self, key):
-        return missing
