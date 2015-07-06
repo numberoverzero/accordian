@@ -48,9 +48,8 @@ async def single_dispatch_run():
     await dispatch.start()
     await stop_loop()
 
-print("\nTest dispatch.Dispatch")
 # Make sure we can restart
-print("\nFirst run")
+print("First run")
 loop.run_until_complete(single_dispatch_run())
 print("\nSecond run")
 loop.run_until_complete(single_dispatch_run())
