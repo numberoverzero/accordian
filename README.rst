@@ -2,10 +2,11 @@
     :target: https://travis-ci.org/numberoverzero/accordian
 .. image:: https://img.shields.io/coveralls/numberoverzero/accordian/master.svg?style=flat-square
     :target: https://coveralls.io/github/numberoverzero/accordian
+.. image:: https://img.shields.io/pypi/v/accordian.svg?style=flat-square
+    :target: https://pypi.python.org/pypi/accordian
+.. image:: https://img.shields.io/github/issues-raw/numberoverzero/accordian.svg?style=flat-square
+    :target: https://github.com/numberoverzero/accordian/issues
 
-Downloads https://pypi.python.org/pypi/accordian
-
-Source https://github.com/numberoverzero/accordian
 
 Event dispatch in Python 3.5 using asyncio
 
