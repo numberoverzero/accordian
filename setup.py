@@ -3,9 +3,9 @@ from setuptools import setup
 
 setup(
     name='accordian',
-    version='0.2.1',
+    version='0.2.2',
     description='Event dispatch in Python 3.5 using asyncio',
-    long_description=open('README.md').read(),
+    long_description=open('README.rst').read(),
     author='Joe Cross',
     author_email='joe.mcross@gmail.com',
     url='http://github.com/numberoverzero/accordian/',
