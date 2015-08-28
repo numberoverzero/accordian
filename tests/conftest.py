@@ -1,3 +1,4 @@
+import accordian
 import asyncio
 import pytest
 
@@ -7,29 +8,30 @@ def loop():
     '''
     Keep things clean by using a new event loop
     '''
-    return asyncio.new_event_loop()
+    loop = asyncio.new_event_loop()
+    loop.set_debug(True)
+    return loop
 
 
 @pytest.fixture
-def run(loop):
-    '''
-    Run a coro until it completes.
-    Returns result from coro, if it produces one.
-    '''
-    def run_in_loop(coro):
-        # For more details on what's going on:
-        # https://docs.python.org/3/library/asyncio-task.html\
-        #       #example-future-with-run-until-complete
-        async def capture_return(future):
-            ''' Push coro result into future for return '''
-            future.set_result(await coro)
-        # Kick off the coro, wrapped in the future above
-        future = asyncio.Future(loop=loop)
-        loop.create_task(capture_return(future))
+def BasicTask():
+    ''' Keeps track of start, shutdown calls '''
 
-        # Block until coro completes and dumps return in future
-        loop.run_until_complete(future)
+    class BasicTask(accordian.RestartableTask):
+        def __init__(self, *, loop):
+            self.calls = []
+            super().__init__(loop=loop)
 
-        # Hand result back
-        return future.result()
-    return run_in_loop
+        async def start(self):
+            self.calls.append("start")
+            await super().start()
+
+        async def _start_shutdown(self):
+            self.calls.append("start shutdown")
+            await super()._start_shutdown()
+            await self._finish_shutdown()
+
+        async def _finish_shutdown(self):
+            self.calls.append("finish shutdown")
+            await super()._finish_shutdown()
+    return BasicTask
