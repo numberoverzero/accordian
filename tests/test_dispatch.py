@@ -8,6 +8,9 @@ def test_start_idempotent(loop, dispatch):
     loop.run_until_complete(dispatch.start())
     assert dispatch.running
 
+    # Prevent complaints about destroying a pending task
+    loop.run_until_complete(dispatch.stop())
+
 
 def test_stop_idempotent(loop, dispatch):
     loop.run_until_complete(dispatch.start())
@@ -58,6 +61,8 @@ def test_register_running(dispatch, loop):
 
     with pytest.raises(RuntimeError):
         dispatch.register(event, params)
+
+    # Prevent complaints about destroying a pending task
     loop.run_until_complete(dispatch.stop())
 
 
@@ -74,6 +79,8 @@ def test_unregister_running(dispatch, loop):
     loop.run_until_complete(dispatch.start())
     with pytest.raises(RuntimeError):
         dispatch.unregister(event)
+
+    # Prevent complaints about destroying a pending task
     loop.run_until_complete(dispatch.stop())
 
 
@@ -96,3 +103,18 @@ def test_single_handler(dispatch, loop):
     ]:
         loop.run_until_complete(task)
     assert called
+
+
+def test_clear(dispatch, loop):
+    event = "my-event"
+    params = {"foo": 4}
+    dispatch.register(event, params.keys())
+
+    @dispatch.on(event)
+    async def handle(foo):
+        pass
+
+    loop.run_until_complete(dispatch.trigger(event, params))
+    assert dispatch.events
+    dispatch.clear()
+    assert not dispatch.events
