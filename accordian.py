@@ -5,6 +5,7 @@ __all__ = ["RestartableTask", "Dispatch", "EventHandler"]
 
 
 class Event:
+    """ Two-part event, can be started and completed. """
     def __init__(self, *, loop):
         self.loop = loop
         self._start = asyncio.Event(loop=self.loop)
@@ -35,13 +36,13 @@ class Event:
 
 class RestartableTask:
     def __init__(self, *, loop):
-        '''
+        """
         Abstract task that ensures a previous run's shutdown logic has
         completed before the next start call is allowed to continue.
 
         RestartableTasks must call `await self._complete_shutdown()` when they
         have safely ended any running coroutines.
-        '''
+        """
         self.loop = loop
         self.running = False
         self._shutdown = Event(loop=self.loop)
@@ -80,7 +81,7 @@ class RestartableTask:
 
 
 class Dispatch(RestartableTask):
-    ''' Dispatch unpacked **kwargs to callbacks when events occur '''
+    """ Dispatch unpacked **kwargs to callbacks when events occur """
     def __init__(self, loop):
         super().__init__(loop=loop)
         self._handlers = {}
@@ -88,7 +89,7 @@ class Dispatch(RestartableTask):
         self._resume_processing = asyncio.Event(loop=self.loop)
 
     def on(self, event):
-        '''
+        """
         Returns a wrapper for the given event.
 
         Usage:
@@ -97,14 +98,14 @@ class Dispatch(RestartableTask):
             def handle_my_event(foo, bar, baz):
                 ...
 
-        '''
+        """
         handler = self._handlers.get(event, None)
         if not handler:
             raise ValueError("Unknown event '{}'".format(event))
         return handler.register
 
     def register(self, event, params):
-        '''
+        """
         Register a new event with available params.
         Raises ValueError when the event has already been registered.
 
@@ -112,14 +113,14 @@ class Dispatch(RestartableTask):
 
             dispatch.register("my_event", ["foo", "bar", "baz"])
 
-        '''
+        """
         handler = self._handlers.get(event, None)
         if handler is not None:
             raise ValueError("Event {} already registered".format(event))
         self._handlers[event] = EventHandler(event, params, self.loop)
 
     def unregister(self, event):
-        '''
+        """
         Remove all registered handlers for an event.
         Silent return when event was not registered.
 
@@ -128,32 +129,32 @@ class Dispatch(RestartableTask):
             dispatch.unregister("my_event")
             dispatch.unregister("my_event")  # no-op
 
-        '''
+        """
         self._handlers.pop(event, None)
 
     def trigger(self, event, params):
-        ''' Non-blocking enqueue of an event '''
+        """ Non-blocking enqueue of an event """
         self._queue.put_nowait((event, params))
         self._resume_processing.set()
 
     @property
     def events(self):
-        ''' Number of events currently enqueued '''
+        """ Number of events currently enqueued """
         return self._queue.qsize()
 
     def clear(self):
-        '''
+        """
         Clear any enqueued events.
 
         Raises a RuntimeException if called while the Dispatcher is running
-        '''
+        """
         if self.running:
             raise RuntimeError("Can't clear the queue while running")
         while self.events:
             self._queue.get_nowait()
 
     async def _task(self):
-        ''' Main queue processor '''
+        """ Main queue processor """
 
         for handler in self._handlers.values():
             await handler.start()
@@ -203,11 +204,11 @@ class EventHandler(RestartableTask):
             task.add_done_callback(self._task_done)
 
     def _task_done(self, task):
-        '''
+        """
         When a callback is complete, remove it from the active task set.
 
         Don't raise if the task has already been removed
-        '''
+        """
         self._tasks.pop(id(task), None)
 
     def register(self, callback):
