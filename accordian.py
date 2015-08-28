@@ -1,6 +1,6 @@
 import asyncio
 import inspect
-missing = object()
+MISSING = object()
 __all__ = ["RestartableTask", "Dispatch", "EventHandler"]
 
 
@@ -97,9 +97,9 @@ class Dispatch(RestartableTask):
             raise ValueError("Unknown event '{}'".format(event))
         return handler.register
 
-    def register(self, event, params):
+    def register(self, event, keys):
         """
-        Register a new event with available params.
+        Register a new event with available keys.
         Raises ValueError when the event has already been registered.
 
         Usage:
@@ -112,7 +112,7 @@ class Dispatch(RestartableTask):
         handler = self._handlers.get(event, None)
         if handler is not None:
             raise ValueError("Event {} already registered".format(event))
-        self._handlers[event] = EventHandler(event, params, loop=self.loop)
+        self._handlers[event] = EventHandler(event, keys, loop=self.loop)
 
     def unregister(self, event):
         """
@@ -129,9 +129,9 @@ class Dispatch(RestartableTask):
             raise RuntimeError("Can't unregister while running")
         self._handlers.pop(event, None)
 
-    async def trigger(self, event, params):
+    async def trigger(self, event, kwargs):
         """ Enqueue an event for processing """
-        await self._queue.put((event, params))
+        await self._queue.put((event, kwargs))
         self._resume_processing.set()
 
     @property
@@ -153,10 +153,10 @@ class Dispatch(RestartableTask):
 
         while self.running:
             if self.events:
-                event, params = await self._queue.get()
+                event, kwargs = await self._queue.get()
                 handler = self._handlers.get(event, None)
                 if handler:
-                    handler(params)
+                    handler(kwargs)
             else:
                 # Resume on either the next `trigger` call or a `stop`
                 await self._resume_processing.wait()
@@ -177,21 +177,28 @@ class Dispatch(RestartableTask):
 
 
 class EventHandler(RestartableTask):
-    def __init__(self, event, params, *, loop):
+
+    def __init__(self, event, keys, *, loop):
         super().__init__(loop=loop)
-        self._event = event
-        self._params = params
+        self.event = event
+        self.keys = keys
         self._callbacks = []
         self._tasks = {}
 
-    def __call__(self, params):
+    def __call__(self, kwargs):
         # Don't handle the call if we're shutting down
         if not self.running:
             raise RuntimeError(
                 "EventHandler must be running to delegate events")
 
+        filtered_kwargs = {}
+        for key in self.keys:
+            value = kwargs.get(key, MISSING)
+            if value is not MISSING:
+                filtered_kwargs[key] = value
+
         for callback in self._callbacks:
-            task = self.loop.create_task(callback(params))
+            task = self.loop.create_task(callback(filtered_kwargs))
             self._tasks[id(task)] = task
             task.add_done_callback(self._task_done)
 
@@ -204,9 +211,11 @@ class EventHandler(RestartableTask):
         self._tasks.pop(id(task), None)
 
     def register(self, callback):
-        self._validate(callback)
-        wrapped = self._wrap(callback)
+        wrapped = callback
+        if not inspect.iscoroutinefunction(wrapped):
+            wrapped = asyncio.coroutine(wrapped)
         self._callbacks.append(wrapped)
+        # Always return the decorated function unchanged
         return callback
 
     async def _start_shutdown(self):
@@ -215,74 +224,3 @@ class EventHandler(RestartableTask):
         if active_tasks:
             await asyncio.wait(active_tasks, loop=self.loop)
         await self._complete_shutdown()
-
-    def _wrap(self, callback):
-        return partial_bind(callback)
-
-    def _validate(self, callback):
-        validate_func(self._event, callback, self._params)
-
-
-def validate_func(event, callback, params):
-    sig = inspect.signature(callback)
-    expected = set(sig.parameters)
-    for param in sig.parameters.values():
-        kind = param.kind
-        if kind == inspect.Parameter.VAR_POSITIONAL:
-            raise ValueError(
-                ("function '{}' expects parameter {} to be VAR_POSITIONAL, "
-                 "when it will always be a single value.  This parameter "
-                 "must be either POSITIONAL_ONLY, POSITIONAL_OR_KEYWORD, or "
-                 "KEYWORD_ONLY (or omitted)").format(callback.__name__,
-                                                     param.name))
-        if kind == inspect.Parameter.VAR_KEYWORD:
-            # **kwargs are ok, as long as the **name doesn't
-            # mask an actual param that the event emits.
-            if param.name in params:
-                # masking :(
-                raise ValueError(
-                    ("function '{}' expects parameter {} to be VAR_KEYWORD, "
-                     "which masks an actual parameter for event {}.  This "
-                     "event has the following parameters, which must not be "
-                     "used as the **VAR_KEYWORD argument.  They may be "
-                     "omitted").format(
-                        callback.__name__, param.name, event, params))
-            else:
-                # Pop from expected, this will gobble up any unused params
-                expected.remove(param.name)
-
-    available = set(params)
-    unavailable = expected - available
-    if unavailable:
-        raise ValueError(
-            ("function '{}' expects the following parameters for event {} "
-             "that are not available: {}.  Available parameters for this "
-             "event are: {}").format(callback.__name__, event,
-                                     unavailable, available))
-
-
-def partial_bind(callback):
-    sig = inspect.signature(callback)
-    # Wrap non-coroutines so we can always `await callback(**kw)`
-    if not inspect.iscoroutinefunction(callback):
-        callback = asyncio.coroutine(callback)
-    base = {}
-    for key, param in sig.parameters.items():
-        default = param.default
-        #  Param has no default - use equivalent of empty
-        if default is inspect.Parameter.empty:
-            base[key] = None
-        else:
-            base[key] = default
-
-    async def wrapper(params):
-        unbound = base.copy()
-        # Only map params this callback expects
-        for key in base:
-            new_value = params.get(key, missing)
-            if new_value is not missing:
-                unbound[key] = new_value
-        bound = sig.bind(**unbound)
-        return await callback(*bound.args, **bound.kwargs)
-
-    return wrapper
