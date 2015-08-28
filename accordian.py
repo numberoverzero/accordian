@@ -7,16 +7,15 @@ __all__ = ["RestartableTask", "Dispatch", "EventHandler"]
 class Event:
     """ Two-part event, can be started and completed. """
     def __init__(self, *, loop):
-        self.loop = loop
-        self._start = asyncio.Event(loop=self.loop)
-        self._complete = asyncio.Event(loop=self.loop)
+        self._start = asyncio.Event(loop=loop)
+        self._complete = asyncio.Event(loop=loop)
 
     @property
     def started(self):
         return self._start.is_set()
 
     @property
-    def completed(self):
+    def completed(self):  # pragma: no cover
         return self._complete.is_set()
 
     def start(self):
