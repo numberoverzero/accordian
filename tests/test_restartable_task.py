@@ -2,7 +2,7 @@ import accordian
 
 
 def test_start_idempotent(loop):
-    ''' Calling `RestartableTask.start` multiple times is safe '''
+    """ Calling start multiple times is safe """
     task = accordian.RestartableTask(loop=loop)
     assert not task.running
 
@@ -14,7 +14,7 @@ def test_start_idempotent(loop):
 
 
 def test_stop_invokes_shutdown(loop, BasicTask):
-    ''' `RestartableTask.stop` awaits on _start_shutdown, _complete_shutdown '''
+    """ stop awaits on _start_shutdown, _complete_shutdown """
     task = BasicTask(loop=loop)
 
     loop.run_until_complete(task.start())
