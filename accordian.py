@@ -15,7 +15,7 @@ class Event:
         return self._start.is_set()
 
     @property
-    def finished(self):
+    def completed(self):
         return self._complete.is_set()
 
     def start(self):
