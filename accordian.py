@@ -140,13 +140,7 @@ class Dispatch(RestartableTask):
         return self._queue.qsize()
 
     def clear(self):
-        """
-        Clear any enqueued events.
-
-        Raises a RuntimeException if called while the Dispatcher is running
-        """
-        if self.running:
-            raise RuntimeError("Can't clear the queue while running")
+        """ Clear any enqueued events """
         while self.events:
             self._queue.get_nowait()
 
