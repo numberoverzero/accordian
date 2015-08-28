@@ -14,6 +14,11 @@ def loop():
 
 
 @pytest.fixture
+def dispatch(loop):
+    return accordian.Dispatch(loop=loop)
+
+
+@pytest.fixture
 def BasicTask():
     ''' Keeps track of start, shutdown calls '''
 
