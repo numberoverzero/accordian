@@ -5,7 +5,7 @@ __all__ = ["RestartableTask", "Dispatch", "EventHandler"]
 
 
 class RestartableTask:
-    def __init__(self, loop):
+    def __init__(self, *, loop):
         '''
         Abstract task that ensures a previous run's shutdown logic has
         completed before the next start call is allowed to continue.
@@ -24,8 +24,8 @@ class RestartableTask:
 
         if self.__shutdown_started.is_set():
             await self.__shutdown_finished.wait()
-            self.__shutdown_started.clear()
-            self.__shutdown_finished.clear()
+        self.__shutdown_started.clear()
+        self.__shutdown_finished.clear()
 
         self.running = True
         self.loop.create_task(self._task())
