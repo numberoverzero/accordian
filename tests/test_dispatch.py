@@ -86,19 +86,20 @@ def test_unregister_running(dispatch, loop):
 
 def test_single_handler(dispatch, loop):
     event = "my-event"
-    params = {"x": 4, "y": 5, "z": 6}
-    dispatch.register(event, params.keys())
+    expected = {"x": 4, "y": 5, "z": 6}
+    dispatch.register(event, expected.keys())
 
     called = False
 
     @dispatch.on(event)
-    async def handle(x, y):
+    async def handle(kwargs):
         nonlocal called
+        assert kwargs == expected
         called = True
 
     for task in [
         dispatch.start(),
-        dispatch.trigger(event, params),
+        dispatch.trigger(event, expected),
         dispatch.stop()
     ]:
         loop.run_until_complete(task)
@@ -107,14 +108,23 @@ def test_single_handler(dispatch, loop):
 
 def test_clear(dispatch, loop):
     event = "my-event"
-    params = {"foo": 4}
-    dispatch.register(event, params.keys())
+    kwargs = {"foo": 4}
+    dispatch.register(event, ["foo"])
 
     @dispatch.on(event)
-    async def handle(foo):
-        pass
+    async def handle(kwargs):
+        assert kwargs["foo"] == 4
 
-    loop.run_until_complete(dispatch.trigger(event, params))
+    loop.run_until_complete(dispatch.trigger(event, kwargs))
     assert dispatch.events
     dispatch.clear()
     assert not dispatch.events
+
+
+def test_trigger_unknown(dispatch, loop):
+    for task in [
+        dispatch.start(),
+        dispatch.trigger("unknown-event", {"not": "used"}),
+        dispatch.stop()
+    ]:
+        loop.run_until_complete(task)
