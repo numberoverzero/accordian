@@ -200,3 +200,28 @@ def test_graceful_cleanup_handler(dispatch, loop):
     loop.run_until_complete(dispatch.trigger(event, {}))
     loop.run_until_complete(dispatch.stop())
     assert called
+
+
+def test_events_no_block(dispatch, loop):
+    """ Handlers for one event do not block handlers for another event """
+    dispatch.register("A", [])
+    dispatch.register("B", [])
+    called = []
+
+    # We'll trigger an "A" event first, but it won't complete until it sees
+    # the "B" in called ("B" handler finishes first)
+    @dispatch.on("A")
+    async def handle_a(kwargs):
+        while "B" not in called:
+            await asyncio.sleep(0, loop=loop)
+        called.append("A")
+
+    @dispatch.on("B")
+    async def handle_a(kwargs):
+        called.append("B")
+
+    loop.run_until_complete(dispatch.start())
+    loop.run_until_complete(dispatch.trigger("A", {}))
+    loop.run_until_complete(dispatch.trigger("B", {}))
+    loop.run_until_complete(dispatch.stop())
+    assert called == ["B", "A"]
