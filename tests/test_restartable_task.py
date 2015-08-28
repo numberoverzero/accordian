@@ -14,11 +14,11 @@ def test_start_idempotent(loop):
 
 
 def test_stop_invokes_shutdown(loop, BasicTask):
-    ''' `RestartableTask.stop` awaits on _start_shutdown, _finish_shutdown '''
+    ''' `RestartableTask.stop` awaits on _start_shutdown, _complete_shutdown '''
     task = BasicTask(loop=loop)
 
     loop.run_until_complete(task.start())
     assert task.calls == ["start"]
 
     loop.run_until_complete(task.stop())
-    assert task.calls == ["start", "start shutdown", "finish shutdown"]
+    assert task.calls == ["start", "start shutdown", "complete shutdown"]

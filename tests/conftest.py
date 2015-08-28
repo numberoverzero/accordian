@@ -29,9 +29,9 @@ def BasicTask():
         async def _start_shutdown(self):
             self.calls.append("start shutdown")
             await super()._start_shutdown()
-            await self._finish_shutdown()
+            await self._complete_shutdown()
 
-        async def _finish_shutdown(self):
-            self.calls.append("finish shutdown")
-            await super()._finish_shutdown()
+        async def _complete_shutdown(self):
+            self.calls.append("complete shutdown")
+            await super()._complete_shutdown()
     return BasicTask
