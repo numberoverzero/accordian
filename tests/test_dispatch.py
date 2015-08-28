@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 
 
@@ -86,9 +87,8 @@ def test_unregister_running(dispatch, loop):
 
 def test_single_handler(dispatch, loop):
     event = "my-event"
-    expected = {"x": 4, "y": 5, "z": 6}
-    dispatch.register(event, expected.keys())
-
+    dispatch.register(event, ["foo", "bar"])
+    expected = {"foo": 4, "bar": 5}
     called = False
 
     @dispatch.on(event)
@@ -97,12 +97,9 @@ def test_single_handler(dispatch, loop):
         assert kwargs == expected
         called = True
 
-    for task in [
-        dispatch.start(),
-        dispatch.trigger(event, expected),
-        dispatch.stop()
-    ]:
-        loop.run_until_complete(task)
+    loop.run_until_complete(dispatch.start())
+    loop.run_until_complete(dispatch.trigger(event, expected))
+    loop.run_until_complete(dispatch.stop())
     assert called
 
 
@@ -128,3 +125,78 @@ def test_trigger_unknown(dispatch, loop):
         dispatch.stop()
     ]:
         loop.run_until_complete(task)
+
+
+def test_event_dispatch_not_running(dispatch, loop):
+    event = "my-event"
+    kwargs = {"foo": 4}
+    dispatch.register(event, ["foo"])
+
+    @dispatch.on(event)
+    async def handle(kwargs):
+        assert kwargs["foo"] == 4
+
+    handler = dispatch._handlers[event]
+
+    with pytest.raises(RuntimeError):
+        handler(kwargs)
+
+
+def test_register_non_async(dispatch, loop):
+    """ Event handler will be wrapped in coro if not already async """
+    event = "my-event"
+    dispatch.register(event, ["foo", "bar"])
+    expected = {"foo": 4, "bar": 5}
+    called = False
+
+    @dispatch.on(event)
+    def handle(kwargs):
+        nonlocal called
+        assert kwargs == expected
+        called = True
+
+    loop.run_until_complete(dispatch.start())
+    loop.run_until_complete(dispatch.trigger(event, expected))
+    loop.run_until_complete(dispatch.stop())
+    assert called
+
+
+def test_extra_missing_kwargs(dispatch, loop):
+    """
+    Unexpected kwargs aren't passed to handlers,
+    and missing kwargs aren't set to any default value.
+    """
+    event = "my-event"
+    dispatch.register(event, ["foo", "bar"])
+
+    expected = {"foo": 4}
+    actual = {"foo": 4, "extra field": "not passed on"}
+
+    @dispatch.on(event)
+    def handle(kwargs):
+        assert kwargs == expected
+
+    loop.run_until_complete(dispatch.start())
+    loop.run_until_complete(dispatch.trigger(event, actual))
+    loop.run_until_complete(dispatch.stop())
+
+
+def test_graceful_cleanup_handler(dispatch, loop):
+    event = "my-event"
+    dispatch.register(event, [])
+    handler = dispatch._handlers[event]
+    called = False
+
+    @dispatch.on(event)
+    async def handle(kwargs):
+        nonlocal called
+        # Don't complete the handler until the dispatch
+        # has started shutting down
+        while handler.running:
+            await asyncio.sleep(0, loop=loop)
+        called = True
+
+    loop.run_until_complete(dispatch.start())
+    loop.run_until_complete(dispatch.trigger(event, {}))
+    loop.run_until_complete(dispatch.stop())
+    assert called
