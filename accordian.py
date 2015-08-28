@@ -4,28 +4,55 @@ missing = object()
 __all__ = ["RestartableTask", "Dispatch", "EventHandler"]
 
 
+class Event:
+    def __init__(self, *, loop):
+        self.loop = loop
+        self._start = asyncio.Event(loop=self.loop)
+        self._complete = asyncio.Event(loop=self.loop)
+
+    @property
+    def started(self):
+        return self._start.is_set()
+
+    @property
+    def finished(self):
+        return self._complete.is_set()
+
+    def start(self):
+        self._start.set()
+
+    def complete(self):
+        self._complete.set()
+
+    def clear(self):
+        self._start.clear()
+        self._complete.clear()
+
+    async def wait(self):
+        await self._start.wait()
+        await self._complete.wait()
+
+
 class RestartableTask:
     def __init__(self, *, loop):
         '''
         Abstract task that ensures a previous run's shutdown logic has
         completed before the next start call is allowed to continue.
 
-        RestartableTasks must call `await self._finish_shutdown()` when they
+        RestartableTasks must call `await self._complete_shutdown()` when they
         have safely ended any running coroutines.
         '''
         self.loop = loop
         self.running = False
-        self.__shutdown_started = asyncio.Event(loop=self.loop)
-        self.__shutdown_finished = asyncio.Event(loop=self.loop)
+        self._shutdown = Event(loop=self.loop)
 
     async def start(self):
         if self.running:
             return
 
-        if self.__shutdown_started.is_set():
-            await self.__shutdown_finished.wait()
-        self.__shutdown_started.clear()
-        self.__shutdown_finished.clear()
+        if self._shutdown.started:
+            await self._shutdown.wait()
+        self._shutdown.clear()
 
         self.running = True
         self.loop.create_task(self._task())
@@ -36,10 +63,11 @@ class RestartableTask:
         self.running = False
 
         # Kick off the shutdown process
-        self.__shutdown_started.set()
+        self._shutdown.start()
         await self._start_shutdown()
+
         # Wait for the return signal that the shutdown is complete
-        await self.__shutdown_finished.wait()
+        await self._shutdown.wait()
 
     async def _task(self):
         pass
@@ -47,8 +75,8 @@ class RestartableTask:
     async def _start_shutdown(self):
         pass
 
-    async def _finish_shutdown(self):
-        self.__shutdown_finished.set()
+    async def _complete_shutdown(self):
+        self._shutdown.complete()
 
 
 class Dispatch(RestartableTask):
@@ -147,7 +175,7 @@ class Dispatch(RestartableTask):
             await asyncio.wait(tasks, loop=self.loop)
 
         # Let the shutdown process continue
-        await self._finish_shutdown()
+        await self._complete_shutdown()
 
     async def _start_shutdown(self):
         # The processor is waiting, resume so it can exit cleanly
@@ -172,9 +200,9 @@ class EventHandler(RestartableTask):
         for callback in self._callbacks:
             task = self.loop.create_task(callback(params))
             self._tasks[id(task)] = task
-            task.add_done_callback(self._delegate_done)
+            task.add_done_callback(self._task_done)
 
-    def _delegate_done(self, task):
+    def _task_done(self, task):
         '''
         When a callback is complete, remove it from the active task set.
 
@@ -193,7 +221,7 @@ class EventHandler(RestartableTask):
         active_tasks = list(self._tasks.values())
         if active_tasks:
             await asyncio.wait(active_tasks, loop=self.loop)
-        await self._finish_shutdown()
+        await self._complete_shutdown()
 
     def _wrap(self, callback):
         return partial_bind(callback)
