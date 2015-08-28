@@ -11,7 +11,7 @@ class Event:
         self._complete = asyncio.Event(loop=loop)
 
     @property
-    def started(self):
+    def started(self):  # pragma: no cover
         return self._start.is_set()
 
     @property
@@ -36,11 +36,8 @@ class Event:
 class RestartableTask:
     def __init__(self, *, loop):
         """
-        Abstract task that ensures a previous run's shutdown logic has
-        completed before the next start call is allowed to continue.
-
-        RestartableTasks must call `await self._complete_shutdown()` when they
-        have safely ended any running coroutines.
+        RestartableTasks should call `await self._complete_shutdown()` when
+        they have safely ended any running coroutines.
         """
         self.loop = loop
         self.running = False
@@ -50,11 +47,8 @@ class RestartableTask:
         if self.running:
             return
 
-        if self._shutdown.started:
-            await self._shutdown.wait()
-        self._shutdown.clear()
-
         self.running = True
+        self._shutdown.clear()
         self.loop.create_task(self._task())
 
     async def stop(self):
@@ -66,7 +60,7 @@ class RestartableTask:
         self._shutdown.start()
         await self._start_shutdown()
 
-        # Wait for the return signal that the shutdown is complete
+        # Wait for the _task and/or shutdown logic to gracefully shut down.
         await self._shutdown.wait()
 
     async def _task(self):
@@ -81,7 +75,7 @@ class RestartableTask:
 
 class Dispatch(RestartableTask):
     """ Dispatch unpacked **kwargs to callbacks when events occur """
-    def __init__(self, loop):
+    def __init__(self, *, loop):
         super().__init__(loop=loop)
         self._handlers = {}
         self._queue = asyncio.Queue(loop=self.loop)
@@ -113,10 +107,12 @@ class Dispatch(RestartableTask):
             dispatch.register("my_event", ["foo", "bar", "baz"])
 
         """
+        if self.running:
+            raise RuntimeError("Can't register while running")
         handler = self._handlers.get(event, None)
         if handler is not None:
             raise ValueError("Event {} already registered".format(event))
-        self._handlers[event] = EventHandler(event, params, self.loop)
+        self._handlers[event] = EventHandler(event, params, loop=self.loop)
 
     def unregister(self, event):
         """
@@ -129,6 +125,8 @@ class Dispatch(RestartableTask):
             dispatch.unregister("my_event")  # no-op
 
         """
+        if self.running:
+            raise RuntimeError("Can't unregister while running")
         self._handlers.pop(event, None)
 
     def trigger(self, event, params):
@@ -155,8 +153,9 @@ class Dispatch(RestartableTask):
     async def _task(self):
         """ Main queue processor """
 
-        for handler in self._handlers.values():
-            await handler.start()
+        if self._handlers.values():
+            start_tasks = [h.start() for h in self._handlers.values()]
+            await asyncio.wait(start_tasks, loop=self.loop)
 
         while self.running:
             if self.events:
@@ -184,7 +183,7 @@ class Dispatch(RestartableTask):
 
 
 class EventHandler(RestartableTask):
-    def __init__(self, event, params, loop):
+    def __init__(self, event, params, *, loop):
         super().__init__(loop=loop)
         self._event = event
         self._params = params
