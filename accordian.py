@@ -129,9 +129,9 @@ class Dispatch(RestartableTask):
             raise RuntimeError("Can't unregister while running")
         self._handlers.pop(event, None)
 
-    def trigger(self, event, params):
-        """ Non-blocking enqueue of an event """
-        self._queue.put_nowait((event, params))
+    async def trigger(self, event, params):
+        """ Enqueue an event for processing """
+        await self._queue.put((event, params))
         self._resume_processing.set()
 
     @property
