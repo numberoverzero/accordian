@@ -2,7 +2,7 @@ import asyncio
 import inspect
 MISSING = object()
 __all__ = ["RestartableTask", "Dispatch", "EventHandler"]
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 
 class Event:

@@ -217,7 +217,7 @@ def test_events_no_block(dispatch, loop):
         called.append("A")
 
     @dispatch.on("B")
-    async def handle_a(kwargs):
+    async def handle_b(kwargs):
         called.append("B")
 
     loop.run_until_complete(dispatch.start())
