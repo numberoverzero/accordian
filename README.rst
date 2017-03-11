@@ -1,7 +1,7 @@
 .. image:: https://img.shields.io/travis/numberoverzero/accordian/master.svg?style=flat-square
     :target: https://travis-ci.org/numberoverzero/accordian
-.. image:: https://img.shields.io/coveralls/numberoverzero/accordian/master.svg?style=flat-square
-    :target: https://coveralls.io/github/numberoverzero/accordian
+.. image:: https://img.shields.io/codecov/c/github/numberoverzero/accordian/master.svg?style=flat-square
+    :target: https://codecov.io/gh/numberoverzero/accordian/branch/master
 .. image:: https://img.shields.io/pypi/v/accordian.svg?style=flat-square
     :target: https://pypi.python.org/pypi/accordian
 .. image:: https://img.shields.io/github/issues-raw/numberoverzero/accordian.svg?style=flat-square
