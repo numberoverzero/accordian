@@ -7,24 +7,25 @@ def get_version():
             if line.startswith("__version__"):
                 return eval(line.split("=")[-1])
 
+
 setup(
-    name='accordian',
+    name="accordian",
     version=get_version(),
-    description='Event dispatch in Python 3.5 using asyncio',
-    long_description=open('README.rst').read(),
-    author='Joe Cross',
-    author_email='joe.mcross@gmail.com',
-    url='http://github.com/numberoverzero/accordian/',
-    py_modules=['accordian'],
+    description="Event dispatch in Python 3.8 using asyncio",
+    long_description=open("README.rst").read(),
+    author="Joe Cross",
+    author_email="joe.mcross@gmail.com",
+    url="http://github.com/numberoverzero/accordian/",
+    py_modules=["accordian"],
     install_requires=[],
-    license='MIT',
-    platforms='any',
+    license="MIT",
+    platforms="any",
     classifiers=[
-        'Development Status :: 3 - Alpha',
-        'Intended Audience :: Developers',
-        'License :: OSI Approved :: MIT License',
-        'Programming Language :: Python :: 3.5',
-        'Topic :: Software Development :: Libraries :: Python Modules',
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: Developers",
+        "License :: OSI Approved :: MIT License",
+        "Programming Language :: Python :: 3.8",
+        "Topic :: Software Development :: Libraries :: Python Modules",
     ],
-    keywords='async asyncio dispatch'
+    keywords="async asyncio dispatch"
 )
