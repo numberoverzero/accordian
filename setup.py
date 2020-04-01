@@ -2,10 +2,9 @@ from setuptools import setup
 
 
 def get_version():
-    with open("accordian.py") as f:
-        for line in f:
-            if line.startswith("__version__"):
-                return eval(line.split("=")[-1])
+    for line in open("accordian.py").readlines():
+        if line.startswith("__version__"):
+            return eval(line.split("=")[-1])
 
 
 setup(
