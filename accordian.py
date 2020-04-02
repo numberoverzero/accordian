@@ -13,7 +13,8 @@ class Signal:
     def connect(self, fn: Callable) -> Callable:
         if not asyncio.iscoroutinefunction(fn):
             raise ValueError(f"Signal.connect requires a coroutine function but got {fn}")
-        self.receivers.append(fn)
+        if fn not in self.receivers:
+            self.receivers.append(fn)
         return fn
 
     def send(self, *recv_args, **recv_kwargs) -> Set[asyncio.Task]:
@@ -36,7 +37,7 @@ class Namespace:
     def __init__(self) -> None:
         self.signals = {}
 
-    def signal(self, name: str) -> Signal:
+    def signal(self, name: str = None) -> Signal:
         s = self.signals.get(name)
         if not s:
             s = self.signals[name] = Signal(name=name)
