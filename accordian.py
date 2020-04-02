@@ -11,7 +11,8 @@ class Signal:
         self.receivers: List[Callable] = []
 
     def connect(self, fn: Callable) -> Callable:
-        assert asyncio.iscoroutinefunction(fn)
+        if not asyncio.iscoroutinefunction(fn):
+            raise ValueError(f"Signal.connect requires a coroutine function but got {fn}")
         self.receivers.append(fn)
         return fn
 
