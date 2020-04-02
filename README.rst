@@ -55,10 +55,58 @@ Getting Started
         assert results == []
     asyncio.run(empty())
 
+Namespaces
+==========
+
+By default, ``accordian.signal`` creates signals in a global namespace.  You can create your own namespaces to
+group signals together.  Here, a processor is passed the region and stage to create deployment tasks::
+
+    from accordian import Namespace
+    regions = {"east": Namespace(), "west": Namespace()}
+
+
+    @regions["east"].signal("dev").connect
+    async def deploy_east_dev(s3_url, creds):
+        ...
+
+    @regions["east"].signal("prod").connect
+    async def deploy_east_prod(s3_url, creds):
+        # remove pre-prod feature flags
+        await sanitize_prod(s3_url, "east")
+        ...
+
+    @regions["west"].signal("prod").connect
+    async def deploy_west_prod(s3_url, creds):
+        # legacy region shims
+        await patch_west_bundle(s3_url)
+        await sanitize_prod(s3_url, "west")
+        ...
+
+
+    async def deploy(region, stage):
+        s3_url = await bundle_for_region(region, stage)
+        creds = await creds_for_region(region, stage)
+        signal = regions[region].signal(stage)
+
+        # create the deployment task without waiting
+        signal.send(s3_url, creds)
+
+
+    # create deployment tasks
+    asyncio.run(deploy("east", "dev"))
+    asyncio.run(deploy("west", "prod"))
+
+
+    # wait for deployments to complete
+    async def wait_for_tasks():
+        running = asyncio.all_tasks()
+        await asyncio.wait(running)
+    asyncio.run(wait_for_tasks())
+
 Contributing
 ------------
 
-Contributions welcome!  Please make sure `tox` passes before submitting a PR.
+Contributions welcome!  Please make sure ``tox`` passes before submitting a PR.
 
 Development
 -----------
@@ -68,3 +116,4 @@ To set up a virtualenv and run the test suite::
     git clone https://github.com/numberoverzero/accordian.git
     make venv
     make
+
