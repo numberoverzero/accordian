@@ -21,25 +21,27 @@ Getting Started
     from accordian import signal
     my_event = signal("my_event")
 
-
     @my_event.connect
-    async def power(x, y):
+    async def pow(x, y):
         await asyncio.sleep(0.1)
+        print(f"pow({x}, {y})")
         return x ** y
 
-
     @my_event.connect
-    async def difference(x, y):
+    async def diff(x, y):
         await asyncio.sleep(0.2)
+        print(f"diff({x}, {y})")
         return max(x, y) - min(x, y)
 
 
     # create events without blocking
-    my_event.send(4, 6)
-    my_event.send(0, 1)
+    async def create():
+        my_event.send(4, 6)
+        my_event.send(0, 1)
+    asyncio.run(create())
 
 
-    # or, wait and collect results from all receivers
+    # or block and collect results from all receivers
     async def collect():
         results = await my_event.join(10, 3)
         assert set(results) == {1000, 7}
@@ -53,7 +55,6 @@ Getting Started
         assert results == []
     asyncio.run(empty())
 
-
 Contributing
 ------------
 
@@ -62,8 +63,8 @@ Contributions welcome!  Please make sure `tox` passes before submitting a PR.
 Development
 -----------
 
-To run the test suite::
+To set up a virtualenv and run the test suite::
 
     git clone https://github.com/numberoverzero/accordian.git
-    cd accordian
-    pip install tox && tox
+    make venv
+    make
